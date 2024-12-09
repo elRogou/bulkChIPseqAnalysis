@@ -2,12 +2,12 @@ from Bio import SeqIO, motifs
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 from Bio import SeqIO
-from Bio.motifs import motifs
+# from Bio.motifs import motifs
 
 
 import os
 
-def process_flanking_sequences(fasta_file, pfm_file, output_path, flank_length=10):
+def process_flanking_sequences(fasta_file, pfm_file, output_path, flank_length=10,file_type='jaspar'):
     """
     Identifies motifs in peak sequences and extracts left and right flanking sequences.
 
@@ -17,8 +17,10 @@ def process_flanking_sequences(fasta_file, pfm_file, output_path, flank_length=1
         output_path (str): Base path to save the left and right flanking sequences.
         flank_length (int): Length of the flanking sequence to extract.
     """
+    assert pfm_file.endswith(file_type)
+
     with open(pfm_file) as motif_file:
-        all_motifs = list(motifs.parse(motif_file, "jaspar"))
+        all_motifs = list(motifs.parse(motif_file, file_type))
     
     for motif in all_motifs:
         left_output_fasta = f"{output_path}.{motif.matrix_id}.LF.fa"
@@ -55,7 +57,7 @@ def process_flanking_sequences(fasta_file, pfm_file, output_path, flank_length=1
         print(f"Left flanking sequences saved to {left_output_fasta}")
         print(f"Right flanking sequences saved to {right_output_fasta}")
 
-def process_flanking_sequences_as_one_file(fasta_file, pfm_file, output_file, flank_length=10):
+def process_flanking_sequences_as_one_file(fasta_file, pfm_file, output_file, flank_length=10,file_type='pfm'):
     """
     Identifies motifs in peak sequences and directly writes left and right flanking sequences to an output file.
     Appends to an existing file if it already exists.
@@ -66,10 +68,11 @@ def process_flanking_sequences_as_one_file(fasta_file, pfm_file, output_file, fl
         output_file (str): Path to the output file where flanking sequences will be appended.
         flank_length (int): Length of the flanking sequence to extract.
     """
+    assert pfm_file.endswith(file_type)
     with open(pfm_file) as motif_file:
-        all_motifs = list(motifs.parse(motif_file, "jaspar"))
+        all_motifs = list(motifs.parse(motif_file, file_type))
     
-    with open(output_file, "a") as output_handle:
+    with open(output_file+'.fa', "a") as output_handle:
         for motif in all_motifs:
             for record in SeqIO.parse(fasta_file, "fasta"):
                 sequence = str(record.seq)

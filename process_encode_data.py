@@ -1,93 +1,87 @@
-# Retrieving flanks for proteins in df:
-# 1. fetch list of bed files
-# 2. get fasta of peaks using genome
-# 3. fetch pfms
-# 4. for each pfm fetch flanks, right and left
-# the data will be the following:
-# for every protein, for every ChIPseq experinment, for every bed file in experiment
-# for every pfm, there will be two fa files - left and right.
-# Is it correct to join them?
-# The filename cxan be the following:
-# {pdb_id}.{experiment}.{bed_filename}.{pfm}.LF.fa
-# {pdb_id}.{experiment}.{bed_filename}.{pfm}.RF.fa
-# in a single analysis folders in output folder.
-
-# When running main:
-# create output/analysis
-# load the data with pdb_ids
-# fetch list of files, clever, no glob, maybe should be
-# saved with pdb_ids when running encode retrieval?
-
-# %%
+#%%
 import pandas as pd
 import os
+from multiprocessing import Pool
 from modules.motif_analysis.sequence_extraction import extract_peak_sequences
-from modules.motif_analysis.flanking_extraction import process_flanking_sequences
+from modules.motif_analysis.flanking_extraction import process_flanking_sequences_as_one_file
 from modules.file_operations import log_message
+#%%
+def process_row(row, base_input, base_output, genome_dir, file_type):
+    # Define paths for input and output
+    input_file = os.path.join(
+        base_output,
+        row['pdbID'],
+        'encode',
+        row['Accession'],
+        f"{row['File']}.{file_type}"
+    )
+    
+    genome_type = row['Assembly']
+    genome = os.path.join(genome_dir, f'{genome_type}.fa')
+
+    motif_type = 'jaspar'
+    
+    pdbid_all_motifs = os.path.join(
+        base_output,
+        row['pdbID'],
+        'pfms',
+        f'versions.{motif_type}'
+    )
+    
+    if not os.path.exists(pdbid_all_motifs):
+        log_message('./', f'Failed to fetch Matrix_id for {row["pdbID"]}')
+        return
+    
+    output_path = os.path.join(
+        base_output,
+        'analysis',
+        'flanks_100bp',
+        f"{row['pdbID']}"
+    )
+    
+    peak_fasta = f"{output_path}.peak_sequences.fa"
+    
+    try:
+        # Extract peak sequences
+        extract_peak_sequences(input_file, 
+                               os.path.join(base_input, genome),
+                                peak_fasta,
+                                overwrite='a')
+    except Exception as e:
+        log_message('./', f"Failed to extract PEAK sequences for: {output_path} | Error: {e}")
+        return
+    
+    try:
+        # Process motifs and flanking sequences
+        process_flanking_sequences_as_one_file(peak_fasta,
+                                               pdbid_all_motifs,
+                                               output_path,
+                                               flank_length=100,
+                                               file_type=motif_type)
+    except Exception as e:
+        log_message('./', f"Failed to extract FLANK sequences for: {output_path} | Error: {e}")
 
 def main():
     # Define base directories and file type
     base_input = 'input/'
     base_output = 'output/proteins/'
     file_type = 'bed'
-
     genome_dir = 'genome/'
         
-    os.makedirs(os.path.join(base_output,'analysis/flanks_100bp'), exist_ok=True)
-
+    os.makedirs(os.path.join(base_output, 'analysis/flanks_100bp'), exist_ok=True)
+    
     # Read summaries of files and motifs
     all_files_df = pd.read_csv(os.path.join(base_input, 'allFilesSummary.csv'))
-    all_motifs_df = pd.read_csv(os.path.join(base_input, 'allMotifsSummary.csv'))
     
-    # Process each file and corresponding motifs
-    for i, row in all_files_df.iterrows():
-        input_file = os.path.join(
-            base_output,
-            row['pdbID'],
-            'encode',
-            row['Accession'],
-            f"{row['File']}.{file_type}"
-        )
-        
-        genome_type = row['Assembly']
-
-        genome = os.path.join(genome_dir,f'{genome_type}.fa')
-        
-        pdbid_all_motifs = all_motifs_df[all_motifs_df['pdbID'] == row['pdbID']]['Matrix_id']
-
-        if pdbid_all_motifs.empty:
-            log_message('./',f'Failed to fetch Matrix_id for {row["pdbID"]}')
-            continue
-
-        for matrix_id in pdbid_all_motifs:
-            matrix_id_file = os.path.join(
-                base_output,
-                row['pdbID'],
-                'pfms',
-                f"{matrix_id}.pfm"
-            )
-            
-            output_path = os.path.join(
-                base_output,
-                'analysis',
-                f"{row['pdbID']}.{row['Accession']}.{row['File']}"
-            )
-            
-            peak_fasta = f"{output_path}.peak_sequences.fa"
-
-            try:
-                # Extract peak sequences
-                extract_peak_sequences(input_file, os.path.join(base_input, genome), peak_fasta)
-            except:
-                log_message('./', f"Failed to exctract PEAK sequences for: {output_path}")
-            
-            try:
-                # Process motifs and flanking sequences
-                process_flanking_sequences(peak_fasta, matrix_id_file, output_path)
-            except:
-                log_message('./', f"Failed to exctract FLANK sequences for: {output_path}")
-
-        # break
+    # Prepare arguments for parallel processing
+    args = [
+        (row, base_input, base_output, genome_dir, file_type)
+        for _, row in all_files_df.iterrows()
+    ]
+    
+    # Run in parallel using multiprocessing
+    with Pool(processes=20) as pool:
+        pool.starmap(process_row, args)
 
 if __name__ == "__main__":
     main()
