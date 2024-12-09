@@ -1,0 +1,6 @@
+# ignore input/output folders for now
+input/
+output/
+
+# ipynb files, which are used for testing
+*.ipynb
